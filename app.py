@@ -52,6 +52,6 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler('start', start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Убедитесь, что Flask-приложение прослушивает правильный порт
+    # Используем порт, предоставляемый Render, или 5000 по умолчанию
     port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
