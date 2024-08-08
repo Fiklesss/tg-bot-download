@@ -3,6 +3,7 @@ import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 import yt_dlp
+from flask import Flask
 
 # Токен от BotFather
 TOKEN = os.getenv('TELEGRAM_TOKEN')
@@ -16,6 +17,12 @@ ydl_opts = {
 
 # Регулярное выражение для проверки валидности ссылки на YouTube
 youtube_regex = re.compile(r'^(https?\:\/\/)?(www\.youtube\.com|youtu\.?be)\/.+$')
+
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return "Hello, this is the Telegram bot server."
 
 async def start(update: Update, context) -> None:
     await update.message.reply_text('Привет! Отправь ссылку на YouTube видео, и я помогу тебе скачать его.')
@@ -73,7 +80,10 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(button))
 
-    # Запуск веб-приложения Flask
+    # Запуск телеграм-бота
+    application.start_polling()
+
+    # Убедитесь, что Flask-приложение прослушивает правильный порт
     port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
 
