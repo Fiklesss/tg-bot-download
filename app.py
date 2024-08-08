@@ -3,7 +3,7 @@ import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 import yt_dlp
-from flask import Flask
+from flask import Flask, request
 
 # Токен от BotFather
 TOKEN = os.getenv('TELEGRAM_TOKEN')
@@ -23,6 +23,13 @@ app = Flask(__name__)
 @app.route('/')
 def index():
     return "Hello, this is the Telegram bot server."
+
+# Вебхук для Telegram-бота
+@app.route(f'/{TOKEN}', methods=['POST'])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), bot)
+    application.update_queue.put(update)
+    return 'ok'
 
 async def start(update: Update, context) -> None:
     await update.message.reply_text('Привет! Отправь ссылку на YouTube видео, и я помогу тебе скачать его.')
@@ -79,9 +86,6 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(button))
-
-    # Запуск телеграм-бота
-    application.start_polling()
 
     # Убедитесь, что Flask-приложение прослушивает правильный порт
     port = int(os.getenv('PORT', 5000))
