@@ -3,7 +3,6 @@ import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 import yt_dlp
-from flask import Flask, request
 
 # Токен от BotFather
 TOKEN = os.getenv('TELEGRAM_TOKEN')
@@ -17,19 +16,6 @@ ydl_opts = {
 
 # Регулярное выражение для проверки валидности ссылки на YouTube
 youtube_regex = re.compile(r'^(https?\:\/\/)?(www\.youtube\.com|youtu\.?be)\/.+$')
-
-app = Flask(__name__)
-
-@app.route('/')
-def index():
-    return "Hello, this is the Telegram bot server."
-
-# Вебхук для Telegram-бота
-@app.route(f'/{TOKEN}', methods=['POST'])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    application.update_queue.put(update)
-    return 'ok'
 
 async def start(update: Update, context) -> None:
     await update.message.reply_text('Привет! Отправь ссылку на YouTube видео, и я помогу тебе скачать его.')
@@ -69,24 +55,15 @@ async def button(update: Update, context) -> None:
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            print(f"Скачивание видео по URL: {url} с качеством: {quality}")
             ydl.download([url])
-            print("Видео успешно скачано")
 
-        if os.path.exists(video_file):
-            if os.path.getsize(video_file) < 50 * 1024 * 1024:  # 50MB
-                with open(video_file, 'rb') as f:
-                    await query.message.reply_video(f)
-                    print("Видео отправлено")
-            else:
-                await query.message.reply_text('Видео слишком большое для отправки через Telegram. Вот ссылка для скачивания:')
-                await query.message.reply_document(document=open(video_file, 'rb'))
-                print("Видео слишком большое, отправлено как документ")
+        if os.path.getsize(video_file) < 50 * 1024 * 1024:  # 50MB
+            with open(video_file, 'rb') as f:
+                await query.message.reply_video(f)
         else:
-            print("Файл видео не найден")
-            await query.message.reply_text('Произошла ошибка: файл видео не найден.')
+            await query.message.reply_text('Видео слишком большое для отправки через Telegram. Вот ссылка для скачивания:')
+            await query.message.reply_document(document=open(video_file, 'rb'))
     except Exception as e:
-        print(f'Ошибка при скачивании видео: {str(e)}')
         await query.message.reply_text(f'Произошла ошибка при скачивании видео: {str(e)}')
 
 def main() -> None:
@@ -96,8 +73,9 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(button))
 
-    # Запуск Flask-приложения на порту 4000
-    app.run(host='0.0.0.0', port=0)
+    # Запуск веб-приложения Flask
+    port = int(os.getenv('PORT', 0))
+    app.run(host='0.0.0.0', port=port)
 
 if __name__ == '__main__':
     main()
