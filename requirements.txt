@@ -1,4 +1,4 @@
-flask
-python-telegram-bot
+Flask
+python-telegram-bot==20.0
 yt-dlp
 gunicorn
