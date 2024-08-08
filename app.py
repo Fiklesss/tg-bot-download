@@ -53,8 +53,12 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('start', start))
     dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
 
+    # Убедитесь, что ваш Flask-приложение прослушивает правильный порт
+    port = int(os.getenv('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
+
     updater.start_webhook(listen='0.0.0.0',
-                          port=int(os.getenv('PORT', 5000)),
+                          port=port,
                           url_path=TOKEN)
     updater.bot.setWebhook(f"https://{os.getenv('RAILWAY_STATIC_URL')}/{TOKEN}")
     updater.idle()
