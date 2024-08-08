@@ -87,9 +87,8 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(button))
 
-    # Убедитесь, что Flask-приложение прослушивает правильный порт
-    port = int(os.getenv('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    # Запуск Flask-приложения на порту 4000
+    app.run(host='0.0.0.0', port=4000)
 
 if __name__ == '__main__':
     main()
