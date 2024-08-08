@@ -88,7 +88,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(button))
 
     # Запуск Flask-приложения на порту 4000
-    app.run(host='0.0.0.0', port=4000)
+    app.run(host='0.0.0.0', port=0)
 
 if __name__ == '__main__':
     main()
