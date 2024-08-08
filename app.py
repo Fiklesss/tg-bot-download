@@ -1,56 +1,3 @@
-import os
-import re
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
-import yt_dlp
-from flask import Flask, request
-
-# Токен от BotFather
-TOKEN = os.getenv('TELEGRAM_TOKEN')
-
-# Опции для скачивания видео
-ydl_opts = {
-    'format': 'bestvideo+bestaudio/best',
-    'outtmpl': 'video.%(ext)s',
-    'quiet': True,
-}
-
-# Регулярное выражение для проверки валидности ссылки на YouTube
-youtube_regex = re.compile(r'^(https?\:\/\/)?(www\.youtube\.com|youtu\.?be)\/.+$')
-
-app = Flask(__name__)
-
-@app.route('/')
-def index():
-    return "Hello, this is the Telegram bot server."
-
-# Вебхук для Telegram-бота
-@app.route(f'/{TOKEN}', methods=['POST'])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    application.update_queue.put(update)
-    return 'ok'
-
-async def start(update: Update, context) -> None:
-    await update.message.reply_text('Привет! Отправь ссылку на YouTube видео, и я помогу тебе скачать его.')
-
-async def handle_message(update: Update, context) -> None:
-    url = update.message.text
-    if youtube_regex.match(url):
-        keyboard = [
-            [
-                InlineKeyboardButton("240p", callback_data=f'240p|{url}'),
-                InlineKeyboardButton("360p", callback_data=f'360p|{url}'),
-                InlineKeyboardButton("480p", callback_data=f'480p|{url}'),
-                InlineKeyboardButton("720p", callback_data=f'720p|{url}'),
-                InlineKeyboardButton("1080p", callback_data=f'1080p|{url}'),
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text('Выберите качество для скачивания:', reply_markup=reply_markup)
-    else:
-        await update.message.reply_text('Пожалуйста, отправь валидную ссылку на YouTube.')
-
 async def button(update: Update, context) -> None:
     query = update.callback_query
     await query.answer()
@@ -69,26 +16,22 @@ async def button(update: Update, context) -> None:
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            print(f"Скачивание видео по URL: {url} с качеством: {quality}")
             ydl.download([url])
+            print("Видео успешно скачано")
 
-        if os.path.getsize(video_file) < 50 * 1024 * 1024:  # 50MB
-            with open(video_file, 'rb') as f:
-                await query.message.reply_video(f)
+        if os.path.exists(video_file):
+            if os.path.getsize(video_file) < 50 * 1024 * 1024:  # 50MB
+                with open(video_file, 'rb') as f:
+                    await query.message.reply_video(f)
+                    print("Видео отправлено")
+            else:
+                await query.message.reply_text('Видео слишком большое для отправки через Telegram. Вот ссылка для скачивания:')
+                await query.message.reply_document(document=open(video_file, 'rb'))
+                print("Видео слишком большое, отправлено как документ")
         else:
-            await query.message.reply_text('Видео слишком большое для отправки через Telegram. Вот ссылка для скачивания:')
-            await query.message.reply_document(document=open(video_file, 'rb'))
+            print("Файл видео не найден")
+            await query.message.reply_text('Произошла ошибка: файл видео не найден.')
     except Exception as e:
+        print(f'Ошибка при скачивании видео: {str(e)}')
         await query.message.reply_text(f'Произошла ошибка при скачивании видео: {str(e)}')
-
-def main() -> None:
-    application = Application.builder().token(TOKEN).build()
-
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(CallbackQueryHandler(button))
-
-    # Запуск Flask-приложения на порту 4000
-    app.run(host='0.0.0.0', port=0)
-
-if __name__ == '__main__':
-    main()
