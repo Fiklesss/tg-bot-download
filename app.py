@@ -1,11 +1,10 @@
 import os
 import re
-from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 import yt_dlp
 
-# Токен Telegram бота
+# Токен от BotFather
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 
 # Опции для скачивания видео
@@ -18,13 +17,10 @@ ydl_opts = {
 # Регулярное выражение для проверки валидности ссылки на YouTube
 youtube_regex = re.compile(r'^(https?\:\/\/)?(www\.youtube\.com|youtu\.?be)\/.+$')
 
-# Flask приложение
-app = Flask(__name__)
+async def start(update: Update, context) -> None:
+    await update.message.reply_text('Привет! Отправь ссылку на YouTube видео, и я помогу тебе скачать его.')
 
-def start(update: Update, context) -> None:
-    update.message.reply_text('Привет! Отправь ссылку на YouTube видео, и я помогу тебе скачать его.')
-
-def handle_message(update: Update, context) -> None:
+async def handle_message(update: Update, context) -> None:
     url = update.message.text
     if youtube_regex.match(url):
         keyboard = [
@@ -37,13 +33,13 @@ def handle_message(update: Update, context) -> None:
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        update.message.reply_text('Выберите качество для скачивания:', reply_markup=reply_markup)
+        await update.message.reply_text('Выберите качество для скачивания:', reply_markup=reply_markup)
     else:
-        update.message.reply_text('Пожалуйста, отправь валидную ссылку на YouTube.')
+        await update.message.reply_text('Пожалуйста, отправь валидную ссылку на YouTube.')
 
-def button(update: Update, context) -> None:
+async def button(update: Update, context) -> None:
     query = update.callback_query
-    query.answer()
+    await query.answer()
 
     quality, url = query.data.split('|')
     format_id = {
@@ -63,22 +59,12 @@ def button(update: Update, context) -> None:
 
         if os.path.getsize(video_file) < 50 * 1024 * 1024:  # 50MB
             with open(video_file, 'rb') as f:
-                query.message.reply_video(f)
+                await query.message.reply_video(f)
         else:
-            query.message.reply_text('Видео слишком большое для отправки через Telegram. Вот ссылка для скачивания:')
-            query.message.reply_document(document=open(video_file, 'rb'))
+            await query.message.reply_text('Видео слишком большое для отправки через Telegram. Вот ссылка для скачивания:')
+            await query.message.reply_document(document=open(video_file, 'rb'))
     except Exception as e:
-        query.message.reply_text(f'Произошла ошибка при скачивании видео: {str(e)}')
-
-@app.route(f'/{TOKEN}', methods=['POST'])
-def webhook() -> str:
-    update = Update.de_json(request.get_json(force=True), Application.current.dispatcher.bot)
-    Application.current.update_queue.put(update)
-    return 'ok'
-
-@app.route('/')
-def index() -> str:
-    return 'Hello, this is the Telegram bot server.'
+        await query.message.reply_text(f'Произошла ошибка при скачивании видео: {str(e)}')
 
 def main() -> None:
     application = Application.builder().token(TOKEN).build()
@@ -87,13 +73,9 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(button))
 
-    # Запуск webhook вместо polling
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.getenv('PORT', 5000)),
-        url_path=TOKEN,
-        webhook_url=f"https://{os.getenv('RENDER_EXTERNAL_URL')}/{TOKEN}"
-    )
+    # Запуск веб-приложения Flask
+    port = int(os.getenv('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
 
 if __name__ == '__main__':
     main()
