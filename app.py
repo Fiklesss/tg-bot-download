@@ -1,23 +1,14 @@
 import re
 import os
 import datetime
-from dotenv import load_dotenv
-from config import TOKEN
 import telebot
 from pytube import YouTube
 from pytube import Playlist
-from flask import Flask, request
 
-# Загрузка переменных окружения из .env файла
-load_dotenv()
-
-# Использование токена из переменной окружения
-token = os.getenv('TELEGRAM_TOKEN', TOKEN)
+# Использование токена из переменной окружения, установленной в Render
+token = os.getenv('TELEGRAM_TOKEN')
 
 bot = telebot.TeleBot(token)
-
-# Flask сервер для обработки вебхуков
-app = Flask(__name__)
 
 def writes_logs(_ex):
     """Записывает логи в файл 'logs.log', в котором будет время и ошибка"""
@@ -53,8 +44,8 @@ def send_welcome(message):
 
 @bot.message_handler(content_types=['text'])
 def get_files(message):
-    """Ждёт от пользователя ссылку на ютуб плейлист или видео и начинает его скачивать, и отравляет пользователю"""
-    if message.text[:38] == 'https://www.youtube.com/playlist?list=':
+    """Ждёт от пользователя ссылку на ютуб плейлист или видео и начинает его скачивать, и отправляет пользователю"""
+    if message.text.startswith('https://www.youtube.com/playlist?list='):
         # Для плейлиста
         playlist = Playlist(message.text)
         for url in playlist:
@@ -65,7 +56,7 @@ def get_files(message):
                 writes_logs(_ex)
         else:
             bot.send_message(message.chat.id, "Плейлист закрыт")
-    elif message.text[:32] == 'https://www.youtube.com/watch?v=' or message.text[:17] == 'https://youtu.be/':
+    elif message.text.startswith('https://www.youtube.com/watch?v=') or message.text.startswith('https://youtu.be/'):
         # Для видео
         try:
             url = message.text
@@ -75,17 +66,4 @@ def get_files(message):
             writes_logs(_ex)
 
 delete_all_music_in_directory()
-
-# Настройка вебхука (если требуется)
-@app.route('/' + token, methods=['POST'])
-def webhook():
-    json_string = request.get_data().decode('UTF-8')
-    update = telebot.types.Update.de_json(json_string)
-    bot.process_new_updates([update])
-    return '!', 200
-
-if __name__ == '__main__':
-    port = int(os.getenv('PORT', 5000))
-    bot.remove_webhook()
-    bot.set_webhook(url=f"https://your-domain.com/{token}")
-    app.run(host='0.0.0.0', port=port)
+bot.infinity_polling()
