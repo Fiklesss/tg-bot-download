@@ -1,84 +1,74 @@
-import os
 import re
-from flask import Flask, request, jsonify
-from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, CallbackContext
-import yt_dlp
+import os
+import datetime
+from dotenv import load_dotenv
+from config import TOKEN
+import telebot
+from pytube import YouTube
+from pytube import Playlist
 
-# Создание экземпляра Flask приложения
-app = Flask(__name__)
+# Загрузка переменных окружения из .env файла
+load_dotenv()
 
-# Твой токен от BotFather
-TOKEN = os.getenv('TELEGRAM_TOKEN')
-bot = Bot(token=TOKEN)
+# Использование токена из переменной окружения
+token = os.getenv('TELEGRAM_TOKEN', TOKEN)
 
-# Регулярное выражение для проверки валидности ссылки на YouTube
-youtube_regex = re.compile(r'^(https?\:\/\/)?(www\.youtube\.com|youtu\.?be)\/.+$')
+bot = telebot.TeleBot(token)
 
-# Опции для скачивания видео
-ydl_opts = {
-    'format': 'bestvideo+bestaudio/best',
-    'outtmpl': 'video.%(ext)s',
-    'quiet': True,
-}
+def writes_logs(_ex):
+    """Записывает логи в файл 'logs.log', в котором будет время и ошибка"""
+    with open('logs.log', 'a') as file_log:
+        file_log.write('\n' + str(datetime.datetime.now()) + ': ' + str(_ex))
 
-async def start(update: Update, context: CallbackContext) -> None:
-    await update.message.reply_text('Привет! Отправь ссылку на YouTube видео, и я помогу тебе скачать его.')
-
-async def handle_message(update: Update, context: CallbackContext) -> None:
-    url = update.message.text
-    if youtube_regex.match(url):
-        keyboard = [
-            [
-                InlineKeyboardButton("240p", callback_data=f'240p|{url}'),
-                InlineKeyboardButton("360p", callback_data=f'360p|{url}'),
-                InlineKeyboardButton("480p", callback_data=f'480p|{url}'),
-                InlineKeyboardButton("720p", callback_data=f'720p|{url}'),
-                InlineKeyboardButton("1080p", callback_data=f'1080p|{url}'),
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text('Выберите качество для скачивания:', reply_markup=reply_markup)
-    else:
-        await update.message.reply_text('Пожалуйста, отправь валидную ссылку на YouTube.')
-
-async def button(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.answer()
-
-    quality, url = query.data.split('|')
-    format_id = {
-        '240p': '18',
-        '360p': '18',
-        '480p': '135',
-        '720p': '136',
-        '1080p': '137',
-    }[quality]
-
-    ydl_opts['format'] = format_id
-    video_file = 'video.mp4'
-
+def create_audio(url):
+    """Скачивает и открывает файл на бинарное чтение"""
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+        yt = YouTube(url).streams.filter(only_audio=True).first()
+        path = yt.download("music")
+        audio = open(path, 'rb')
+        return audio
+    except Exception as _ex:
+        writes_logs(_ex)
 
-        if os.path.getsize(video_file) < 50 * 1024 * 1024:  # 50MB
-            with open(video_file, 'rb') as f:
-                await query.message.reply_video(f)
+def delete_all_music_in_directory():
+    """Удаляет все скаченные аудио из папки 'music'"""
+    if not os.path.exists('music'):
+        os.mkdir('music')
+    for file in os.listdir('music'):
+        try:
+            if re.search('mp4', file):
+                mp4_path = os.path.join('music', file)
+                os.remove(mp4_path)
+        except Exception as _ex:
+            writes_logs(_ex)
+
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message):
+    """Стартовое приветствие"""
+    bot.send_message(message.chat.id, "Привет ✌\nПришли мне ссылку на плейлист или видео с YouTube!")
+
+@bot.message_handler(content_types=['text'])
+def get_files(message):
+    """Ждёт от пользователя ссылку на ютуб плейлист или видео и начинает его скачивать, и отравляет пользователю"""
+    if message.text[:38] == 'https://www.youtube.com/playlist?list=':
+        # Для плейлиста
+        playlist = Playlist(message.text)
+        for url in playlist:
+            try:
+                audio = create_audio(url)
+                bot.send_audio(message.chat.id, audio)
+            except Exception as _ex:
+                writes_logs(_ex)
         else:
-            await query.message.reply_text('Видео слишком большое для отправки через Telegram. Вот ссылка для скачивания:')
-            await query.message.reply_document(document=open(video_file, 'rb'))
-    except Exception as e:
-        await query.message.reply_text(f'Произошла ошибка при скачивании видео: {str(e)}')
+            bot.send_message(message.chat.id, "Плейлист закрыт")
+    elif message.text[:32] == 'https://www.youtube.com/watch?v=' or message.text[:17] == 'https://youtu.be/':
+        # Для видео
+        try:
+            url = message.text
+            audio = create_audio(url)
+            bot.send_audio(message.chat.id, audio)
+        except Exception as _ex:
+            writes_logs(_ex)
 
-@app.route(f'/{TOKEN}', methods=['POST'])
-async def webhook():
-    json_str = request.get_data(as_text=True)
-    update = Update.de_json(json_str, bot)
-    application = Application.builder().token(TOKEN).build()
-    await application.process_update(update)
-    return jsonify({'status': 'ok'})
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+delete_all_music_in_directory()
+bot.infinity_polling()
