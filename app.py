@@ -40,7 +40,7 @@ def delete_all_music_in_directory():
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     """Стартовое приветствие"""
-    bot.send_message(message.chat.id, "Привет ✌\nПришли мне ссылку на плейлист или видео с YouTube!")
+    bot.send_message(message.chat.id, "Привет✌\nПришли мне ссылку на плейлист или видео с YouTube!")
 
 @bot.message_handler(content_types=['text'])
 def get_files(message):
