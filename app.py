@@ -2,7 +2,7 @@ import os
 import re
 from flask import Flask, request, jsonify
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, CallbackContext
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, CallbackContext
 import yt_dlp
 
 # Создание экземпляра Flask приложения
@@ -22,10 +22,10 @@ ydl_opts = {
     'quiet': True,
 }
 
-def start(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text('Привет! Отправь ссылку на YouTube видео, и я помогу тебе скачать его.')
+async def start(update: Update, context: CallbackContext) -> None:
+    await update.message.reply_text('Привет! Отправь ссылку на YouTube видео, и я помогу тебе скачать его.')
 
-def handle_message(update: Update, context: CallbackContext) -> None:
+async def handle_message(update: Update, context: CallbackContext) -> None:
     url = update.message.text
     if youtube_regex.match(url):
         keyboard = [
@@ -38,13 +38,13 @@ def handle_message(update: Update, context: CallbackContext) -> None:
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        update.message.reply_text('Выберите качество для скачивания:', reply_markup=reply_markup)
+        await update.message.reply_text('Выберите качество для скачивания:', reply_markup=reply_markup)
     else:
-        update.message.reply_text('Пожалуйста, отправь валидную ссылку на YouTube.')
+        await update.message.reply_text('Пожалуйста, отправь валидную ссылку на YouTube.')
 
-def button(update: Update, context: CallbackContext) -> None:
+async def button(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
-    query.answer()
+    await query.answer()
 
     quality, url = query.data.split('|')
     format_id = {
@@ -64,18 +64,19 @@ def button(update: Update, context: CallbackContext) -> None:
 
         if os.path.getsize(video_file) < 50 * 1024 * 1024:  # 50MB
             with open(video_file, 'rb') as f:
-                query.message.reply_video(f)
+                await query.message.reply_video(f)
         else:
-            query.message.reply_text('Видео слишком большое для отправки через Telegram. Вот ссылка для скачивания:')
-            query.message.reply_document(document=open(video_file, 'rb'))
+            await query.message.reply_text('Видео слишком большое для отправки через Telegram. Вот ссылка для скачивания:')
+            await query.message.reply_document(document=open(video_file, 'rb'))
     except Exception as e:
-        query.message.reply_text(f'Произошла ошибка при скачивании видео: {str(e)}')
+        await query.message.reply_text(f'Произошла ошибка при скачивании видео: {str(e)}')
 
 @app.route(f'/{TOKEN}', methods=['POST'])
-def webhook():
+async def webhook():
     json_str = request.get_data(as_text=True)
     update = Update.de_json(json_str, bot)
-    Dispatcher(bot, None, workers=0).process_update(update)
+    application = Application.builder().token(TOKEN).build()
+    await application.process_update(update)
     return jsonify({'status': 'ok'})
 
 if __name__ == '__main__':
