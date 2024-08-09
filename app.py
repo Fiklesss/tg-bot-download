@@ -6,6 +6,7 @@ from config import TOKEN
 import telebot
 from pytube import YouTube
 from pytube import Playlist
+from flask import Flask, request
 
 # Загрузка переменных окружения из .env файла
 load_dotenv()
@@ -14,6 +15,9 @@ load_dotenv()
 token = os.getenv('TELEGRAM_TOKEN', TOKEN)
 
 bot = telebot.TeleBot(token)
+
+# Flask сервер для обработки вебхуков
+app = Flask(__name__)
 
 def writes_logs(_ex):
     """Записывает логи в файл 'logs.log', в котором будет время и ошибка"""
@@ -71,4 +75,17 @@ def get_files(message):
             writes_logs(_ex)
 
 delete_all_music_in_directory()
-bot.infinity_polling()
+
+# Настройка вебхука (если требуется)
+@app.route('/' + token, methods=['POST'])
+def webhook():
+    json_string = request.get_data().decode('UTF-8')
+    update = telebot.types.Update.de_json(json_string)
+    bot.process_new_updates([update])
+    return '!', 200
+
+if __name__ == '__main__':
+    port = int(os.getenv('PORT', 5000))
+    bot.remove_webhook()
+    bot.set_webhook(url=f"https://your-domain.com/{token}")
+    app.run(host='0.0.0.0', port=port)
