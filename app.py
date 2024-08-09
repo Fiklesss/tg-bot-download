@@ -1,74 +1,83 @@
 import os
-import logging
-from flask import Flask, request
-from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+import re
+from flask import Flask, request, jsonify
+from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, CallbackContext
 import yt_dlp
 
+# Создание экземпляра Flask приложения
+app = Flask(__name__)
+
+# Твой токен от BotFather
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 bot = Bot(token=TOKEN)
 
-app = Flask(__name__)
+# Регулярное выражение для проверки валидности ссылки на YouTube
+youtube_regex = re.compile(r'^(https?\:\/\/)?(www\.youtube\.com|youtu\.?be)\/.+$')
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    level=logging.INFO)
+# Опции для скачивания видео
+ydl_opts = {
+    'format': 'bestvideo+bestaudio/best',
+    'outtmpl': 'video.%(ext)s',
+    'quiet': True,
+}
 
-# Функция для команды /start
-async def start(update: Update, context) -> None:
-    await update.message.reply_text('Привет! Отправь мне ссылку на YouTube видео, и я скачаю его для тебя.')
+def start(update: Update, context: CallbackContext) -> None:
+    update.message.reply_text('Привет! Отправь ссылку на YouTube видео, и я помогу тебе скачать его.')
 
-# Функция для загрузки видео с YouTube
-def download_video(url):
-    ydl_opts = {
-        'format': 'best',
-        'outtmpl': 'downloads/%(title)s.%(ext)s',
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
-
-# Обработка текстовых сообщений
-async def handle_message(update: Update, context) -> None:
+def handle_message(update: Update, context: CallbackContext) -> None:
     url = update.message.text
-    try:
-        download_video(url)
-        with open('downloads/video.mp4', 'rb') as video:
-            await bot.send_video(chat_id=update.message.chat_id, video=video)
-    except Exception as e:
-        logging.error(f"Error downloading video: {e}")
-        await update.message.reply_text('Произошла ошибка при загрузке видео.')
+    if youtube_regex.match(url):
+        keyboard = [
+            [
+                InlineKeyboardButton("240p", callback_data=f'240p|{url}'),
+                InlineKeyboardButton("360p", callback_data=f'360p|{url}'),
+                InlineKeyboardButton("480p", callback_data=f'480p|{url}'),
+                InlineKeyboardButton("720p", callback_data=f'720p|{url}'),
+                InlineKeyboardButton("1080p", callback_data=f'1080p|{url}'),
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        update.message.reply_text('Выберите качество для скачивания:', reply_markup=reply_markup)
+    else:
+        update.message.reply_text('Пожалуйста, отправь валидную ссылку на YouTube.')
 
-# Обработка вебхуков от Telegram
+def button(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+
+    quality, url = query.data.split('|')
+    format_id = {
+        '240p': '18',
+        '360p': '18',
+        '480p': '135',
+        '720p': '136',
+        '1080p': '137',
+    }[quality]
+
+    ydl_opts['format'] = format_id
+    video_file = 'video.mp4'
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+
+        if os.path.getsize(video_file) < 50 * 1024 * 1024:  # 50MB
+            with open(video_file, 'rb') as f:
+                query.message.reply_video(f)
+        else:
+            query.message.reply_text('Видео слишком большое для отправки через Telegram. Вот ссылка для скачивания:')
+            query.message.reply_document(document=open(video_file, 'rb'))
+    except Exception as e:
+        query.message.reply_text(f'Произошла ошибка при скачивании видео: {str(e)}')
+
 @app.route(f'/{TOKEN}', methods=['POST'])
 def webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    application.update_queue.put(update)
-    return 'ok'
+    json_str = request.get_data(as_text=True)
+    update = Update.de_json(json_str, bot)
+    Dispatcher(bot, None, workers=0).process_update(update)
+    return jsonify({'status': 'ok'})
 
-# Главная страница
-@app.route('/')
-def index():
-    return 'Hello, this is the Telegram bot server.'
-
-# Основная функция
 if __name__ == '__main__':
-    # Создаем приложение Telegram
-    application = Application.builder().token(TOKEN).build()
-
-    # Добавляем обработчики команд и сообщений
-    application.add_handler(CommandHandler('start', start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # Устанавливаем вебхук
-    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
-    bot.setWebhook(webhook_url)
-
-    # Запускаем Flask приложение
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 0)))
-
-    # Запуск Telegram бота
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.getenv("PORT", 0)),
-        url_path=TOKEN,
-        webhook_url=webhook_url
-    )
+    port = int(os.environ.get('PORT', 0))
+    app.run(host='0.0.0.0', port=port)
